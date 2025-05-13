@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CONTEXTuAI</title>
+
+  <!-- Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Bootstrap CSS (without integrity) -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    /* Color palette */
+    :root {
+      --color-primary: #212529;    /* near-black */
+      --color-secondary: #495057;  /* dark gray */
+      --color-accent: #FFDB58;     /* Bootstrap blue */
+      --color-heading: #AA4A44;
+      --color-highlight: #6f42c1;  /* purple accent */
+      --popover-bg: #343a40;       /* dark background */
+      --popover-text: #f8f9fa;     /* light text */
+    }
+
+    body {
+      background: #f0f2f5;
+      font-family: 'Poppins', sans-serif;
+      color: var(--color-primary);
+    }
+
+    h1 {
+      color: var(--color-heading);
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .form-label {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: var(--color-secondary);
+    }
+
+    .editor {
+      min-height: 200px;
+      border: 2px solid var(--color-secondary);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      background: #fff;
+      outline: none;
+      font-size: 1.2rem;
+      line-height: 1.6;
+      color: var(--color-primary);
+    }
+
+    #transPopover {
+      position: absolute;
+      pointer-events: none;
+    }
+
+    /* Popover styling */
+    .popover {
+      max-width: 80vw;       /* never exceed viewport */
+      width: auto;           
+      margin: 0;             /* avoid extra side margins */
+      padding: 0;            
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      transform-origin: top center;
+      opacity: 0;
+      transform: scale(0.8) translateY(-8px);
+      transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+    }
+
+    .popover.show {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+
+    .popover-body {
+      background-color: var(--popover-bg);
+      color: var(--popover-text);
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 1.8rem;     /* text at ~2rem */
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      line-height: 1.4;
+    }
+
+    /* Arrow color matching background */
+    .popover.bs-popover-bottom .popover-arrow::after {
+      border-bottom-color: var(--popover-bg);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container py-5">
+    <h1 class="text-center"><b>CONTEXTuAI</b></h1>
+
+    <div class="mb-3">
+      <label for="editor" class="form-label">
+        Paste your paragraph below, then highlight any text to translate:
+      </label>
+      <div id="editor" class="editor" contenteditable="true"
+           placeholder="Start typing or paste your paragraph here…">
+      </div>
+    </div>
+  </div>
+
+  <!-- Popover trigger anchor -->
+  <div id="transPopover" data-bs-toggle="popover" data-bs-html="true"></div>
+
+  <!-- jQuery & Bootstrap JS bundle -->
+
+<!-- jQuery & Bootstrap JS bundle (without integrity) -->
+<script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const popEl = document.getElementById('transPopover');
+    let popoverInstance = null;
+  
+    // Position the hidden trigger
+    function positionPopover(rect) {
+      popEl.style.top  = `${rect.bottom + window.scrollY + 5}px`;
+      popEl.style.left = `${rect.left + window.scrollX}px`;
+    }
+  
+    // Show popover once, or update text if already shown
+    function showPopover(rect, html) {
+      positionPopover(rect);
+  
+      if (!popoverInstance) {
+        // first time: create & show
+        popEl.setAttribute('data-bs-content', html);
+        popoverInstance = new bootstrap.Popover(popEl, {
+          container: 'body',
+          trigger: 'manual',
+          placement: 'bottom',
+          html: true
+        });
+        popoverInstance.show();
+      } else {
+        // already visible: just swap inner text
+        updateContent(html);
+      }
+    }
+  
+    // Use aria-describedby to find the actual popover element
+    function updateContent(html) {
+      const popId = popEl.getAttribute('aria-describedby');
+      if (!popId) return;
+  
+      const tip = document.getElementById(popId);
+      if (!tip) return;
+  
+      const body = tip.querySelector('.popover-body');
+      if (body) body.innerHTML = html;
+    }
+  
+    // Hide + dispose with one OUT animation
+    function hidePopover() {
+      if (popoverInstance) {
+        popoverInstance.hide();
+        popoverInstance.dispose();
+        popoverInstance = null;
+      }
+    }
+  
+    function getSelectionRect() {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return null;
+      const range = sel.getRangeAt(0).cloneRange();
+      return range.getClientRects()[0] || null;
+    }
+  
+    $('#editor').on('mouseup keyup', async () => {
+      const selText = window.getSelection().toString().trim();
+      if (!selText) {
+        hidePopover();
+        return;
+      }
+  
+      const rect      = getSelectionRect();
+      const paragraph = $('#editor').text().trim();
+      if (!rect) return;
+  
+      // 1) show the popover with a single IN animation
+      showPopover(rect, '<div class="text-center">⏳ Translating…</div>');
+  
+      try {
+        const res = await fetch('https://context-ai-dev.deepreality.ai/explain_translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paragraph, sentence: selText })
+        });
+        if (!res.ok) throw new Error(res.status);
+  
+        const data = await res.json();
+        const safe = $('<div>').text(data.translation_te).html();
+  
+        // 2) replace “Translating…” with the actual text
+        updateContent(
+          `<strong style="color: var(--color-accent)">“${selText}”</strong><br>${safe}`
+        );
+      } catch (err) {
+        updateContent(`<span class="text-danger">Error: ${err.message}</span>`);
+      }
+    });
+  
+    // One OUT animation on outside click
+    $(document).on('mousedown', (e) => {
+      if (!popEl.contains(e.target)) hidePopover();
+    });
+  </script>
+  
+</body>
+</html>
